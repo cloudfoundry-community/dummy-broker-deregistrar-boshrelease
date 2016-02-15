@@ -1,76 +1,86 @@
-# BOSH Release for dummy-broker-deregistrar
 
-## Usage
+# Dummy Broker Deregister errand
 
-To use this bosh release, first upload it to your bosh:
+## Sad scenario with Pivotal Ops Manager
 
-```
-bosh target BOSH_HOST
-git clone https://github.com/cloudfoundry-community/dummy-broker-deregistrar-boshrelease.git
-cd dummy-broker-deregistrar-boshrelease
-bosh upload release releases/dummy-broker-deregistrar-1.yml
-```
+This BOSH release was created to help unf@#$ Pivotal Ops Manager when it wants to delete a service-broker Tile that never successfully deployed in the first place.
 
-For [bosh-lite](https://github.com/cloudfoundry/bosh-lite), you can quickly create a deployment manifest & deploy a cluster:
+The scenario is that you've deployed a Tile to your Pivotal Ops Manager for a service broker. Somewhere in the deployment it fails. You decide to delete the broker tile. But you forget to disable the "Deregister Broker" errand first. So, eventually the Delete change fails:
 
 ```
-templates/make_manifest warden
+Errand `broker-deregistrar' did not complete
+```
+
+Unfortunately now you cannot edit the Tile and disable the errand - its in a "being deleted" mode.
+
+![](http://cl.ly/1D0R091c2o3w/Image%202016-02-16%20at%209.55.40%20am.png)
+
+## Solution
+
+So, here's a solution: upload this release - with its `broker-deregistrar` errand - and switch out the deployment manifest for one that uses this release instead and only this release. Then Ops Manager will run this release's errand and it will finish successfully. And then Ops Manager will remove the Tile. And you can move on.
+
+## Steps
+
+SSH into your Ops Manager VM:
+
+```
+ssh ubuntu@<opsmgr-ip>
+```
+
+Change to the directory where deployment manifests are stored:
+
+```
+cd /var/tempest/workspaces/default/deployments
+```
+
+Find your unhappy deployment manifest, make a backup, and edit the `sad-tile.yml` manifest.
+
+```
+sudo cp sad-tile.yml sad-tile.yml.backup
+sudo vi sad-tile.yml
+```
+
+Replace `releases:` with just this dummy release:
+
+```yaml
+releases:
+- name: dummy-broker-deregistrar
+  version: latest
+```
+
+Remove all `jobs:` except the `broker-deregistrar` errand; and change its `templates:` to use the new release:
+
+```yaml
+jobs:
+- name: broker-deregistrar
+  templates:
+  - name: broker-deregistrar
+    release: dummy-broker-deregistrar
+  lifecycle: errand
+  instances: 1
+  resource_pool: broker-deregistrar
+  networks:
+  - name: default
+    default:
+    - dns
+    - gateway
+```
+
+In the terminal, target the BOSH and your edited manifest:
+
+```
+bosh target BOSHIP
+bosh deployment sad-tile.yml
 bosh -n deploy
+bosh run errand broker-deregistrar
 ```
 
-For AWS EC2, create a single VM:
+Running the errand manually confirms that the errand now successfully exits and does nothing.
 
-```
-templates/make_manifest aws-ec2
-bosh -n deploy
-```
+Now, return to Ops Manager and press "Apply changes" again:
 
-### Override security groups
+![](http://cl.ly/1D0R091c2o3w/Image%202016-02-16%20at%209.55.40%20am.png)
 
-For AWS & Openstack, the default deployment assumes there is a `default` security group. If you wish to use a different security group(s) then you can pass in additional configuration when running `make_manifest` above.
+Eventually the Applying Changes verbose output will happily show:
 
-Create a file `my-networking.yml`:
-
-``` yaml
----
-networks:
-  - name: dummy-broker-deregistrar1
-    type: dynamic
-    cloud_properties:
-      security_groups:
-        - dummy-broker-deregistrar
-```
-
-Where `- dummy-broker-deregistrar` means you wish to use an existing security group called `dummy-broker-deregistrar`.
-
-You now suffix this file path to the `make_manifest` command:
-
-```
-templates/make_manifest openstack-nova my-networking.yml
-bosh -n deploy
-```
-
-### Development
-
-As a developer of this release, create new releases and upload them:
-
-```
-bosh create release --force && bosh -n upload release
-```
-
-### Final releases
-
-To share final releases:
-
-```
-bosh create release --final
-```
-
-By default the version number will be bumped to the next major number. You can specify alternate versions:
-
-
-```
-bosh create release --final --version 2.1
-```
-
-After the first release you need to contact [Dmitriy Kalinin](mailto://dkalinin@pivotal.io) to request your project is added to https://bosh.io/releases (as mentioned in README above).
+![](http://cl.ly/3u2b0e3m0Z3Z/Image%202016-02-16%20at%209.58.51%20am.png)

@@ -1,0 +1,5 @@
+---
+name: broker-deregistrar
+packages: []
+templates:
+  bin/run: bin/run
