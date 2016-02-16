@@ -66,10 +66,19 @@ jobs:
     - gateway
 ```
 
-In the terminal, target the BOSH and your edited manifest:
+In the terminal, target the BOSH and upload the release:
+
+
 
 ```
 bosh target BOSHIP
+bosh create release
+bosh upload release
+```
+
+Next target your edited manifest and run the errand once:
+
+```
 bosh deployment sad-tile.yml
 bosh -n deploy
 bosh run errand broker-deregistrar
